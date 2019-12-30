@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/influxdata/telegraf"
@@ -13,12 +14,12 @@ import (
 )
 
 type File struct {
-	Files      []string `toml:"files"`
-	FileTag    string   `toml:"file_tag"`
-	FileDelete bool     `toml:"file_delete"`
-	parser     parsers.Parser
-
-	filenames []string
+	Files        []string `toml:"files"`
+	FileTag      string   `toml:"file_tag"`
+	FileDelete   bool     `toml:"file_delete"`
+	FilesBaseDir string   `toml:"file_base"`
+	parser       parsers.Parser
+	filenames    []string
 }
 
 const sampleConfig = `
@@ -42,7 +43,9 @@ const sampleConfig = `
 
   ## After consuming the file metrics delete the file. Telegraf must have write access
   ## to file path for delete to work. Set to 'True' to enable.
+  ## You must give the base path to the directory
   # file_delete = true
+  # file_base = "/path/to/files/directory"
 `
 
 // SampleConfig returns the default configuration of the Input
@@ -72,7 +75,10 @@ func (f *File) Gather(acc telegraf.Accumulator) error {
 			acc.AddFields(m.Name(), m.Fields(), m.Tags(), m.Time())
 		}
 		if f.FileDelete {
-			f.deleteFile(filepath.Base(k))
+			err := f.deleteFile(filepath.Base(k))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -109,13 +115,13 @@ func (f *File) readMetric(filename string) ([]telegraf.Metric, error) {
 
 }
 
-func (f *File) deleteFile(filename string) {
-	err := os.Remove(filename)
+func (f *File) deleteFile(filename string) error {
+	base := f.FilesBaseDir
+	err := os.Remove(path.Join(base, filename))
 	if err != nil {
-		fmt.Errorf("E! Error file: %v could not be deleted, %s", filename, err)
-	} else {
-		fmt.Println("I!", filename, "was deleted")
+		return fmt.Errorf("could not delete file %v: %v", filename, err)
 	}
+	return nil
 }
 
 func init() {
