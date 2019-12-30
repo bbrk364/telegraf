@@ -3,6 +3,7 @@ package file
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/influxdata/telegraf"
@@ -12,9 +13,10 @@ import (
 )
 
 type File struct {
-	Files   []string `toml:"files"`
-	FileTag string   `toml:"file_tag"`
-	parser  parsers.Parser
+	Files      []string `toml:"files"`
+	FileTag    string   `toml:"file_tag"`
+	FileDelete bool     `toml:"file_delete"`
+	parser     parsers.Parser
 
 	filenames []string
 }
@@ -37,6 +39,10 @@ const sampleConfig = `
   ## Name a tag containing the name of the file the data was parsed from.  Leave empty
   ## to disable.
   # file_tag = ""
+
+  ## After consuming the file metrics delete the file. Telegraf must have write access
+  ## to file path for delete to work. Set to 'True' to enable.
+  # file_delete = true
 `
 
 // SampleConfig returns the default configuration of the Input
@@ -64,6 +70,9 @@ func (f *File) Gather(acc telegraf.Accumulator) error {
 				m.AddTag(f.FileTag, filepath.Base(k))
 			}
 			acc.AddFields(m.Name(), m.Fields(), m.Tags(), m.Time())
+		}
+		if f.FileDelete {
+			f.deleteFile(filepath.Base(k))
 		}
 	}
 	return nil
@@ -98,6 +107,15 @@ func (f *File) readMetric(filename string) ([]telegraf.Metric, error) {
 	}
 	return f.parser.Parse(fileContents)
 
+}
+
+func (f *File) deleteFile(filename string) {
+	err := os.Remove(filename)
+	if err != nil {
+		fmt.Errorf("E! Error file: %v could not be deleted, %s", filename, err)
+	} else {
+		fmt.Println("I!", filename, "was deleted")
+	}
 }
 
 func init() {
